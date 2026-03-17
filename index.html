@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Insulator Simulator FPV Enhanced</title>
+<style>
+  :root{--panel:rgba(10,16,28,.84);--line:rgba(255,255,255,.12);--text:#eef5ff;--muted:#cfe0fb;--gold:#ffd86e}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;overflow:hidden;background:#1b2232;font-family:Arial,Helvetica,sans-serif}
+  canvas{display:block;width:100%;height:100%;touch-action:none}
+  .panel{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:16px;backdrop-filter:blur(8px);box-shadow:0 12px 28px rgba(0,0,0,.25)}
+  #hud{position:absolute;left:10px;top:max(10px, env(safe-area-inset-top));width:min(330px, calc(100% - 20px));padding:12px;z-index:10}
+  #hud h1{margin:0 0 6px;font-size:20px;color:var(--gold)}
+  #hud p{margin:0 0 10px;font-size:12px;line-height:1.35;color:var(--muted)}
+  .metric{margin:8px 0}.row{display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px}
+  .bar{height:11px;border-radius:999px;background:#1b2848;overflow:hidden;border:1px solid rgba(255,255,255,.06)}
+  .fill{height:100%;width:0%;transition:width .2s ease}
+  #sealFill{background:linear-gradient(90deg,#63e28a,#a2ffbc)}
+  #comfortFill{background:linear-gradient(90deg,#ff845c,#ffd15b)}
+  #scoreFill{background:linear-gradient(90deg,#57b7ff,#7af2ff)}
+  #message{position:absolute;left:10px;right:10px;bottom:136px;background:rgba(10,16,28,.9);color:#fff;border:1px solid var(--line);border-radius:14px;padding:10px 12px;text-align:center;font-size:14px;backdrop-filter:blur(8px);z-index:10}
+  #controls{position:absolute;left:10px;right:10px;bottom:max(10px, env(safe-area-inset-bottom));padding:10px;z-index:10}
+  #items{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px}
+  .item,.action{user-select:none}.item{background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:14px;color:var(--text);padding:10px 8px;text-align:center;font-size:12px;font-weight:700;min-height:72px;display:flex;flex-direction:column;justify-content:center;gap:4px;cursor:pointer}
+  .item span{font-size:11px;color:var(--muted);font-weight:400}.item.active{outline:2px solid var(--gold);background:rgba(255,216,110,.12)}
+  #actions{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.action{appearance:none;border:none;border-radius:14px;padding:13px 10px;background:#223860;color:#fff;font-size:14px;font-weight:700;cursor:pointer}
+  #crosshair{position:absolute;left:50%;top:50%;width:24px;height:24px;transform:translate(-50%,-50%);pointer-events:none;z-index:9}
+  #crosshair:before,#crosshair:after{content:'';position:absolute;background:rgba(255,255,255,.9)}
+  #crosshair:before{left:11px;top:3px;width:2px;height:18px} #crosshair:after{left:3px;top:11px;width:18px;height:2px}
+  #lookPad,#movePad{position:absolute;bottom:210px;width:120px;height:120px;border-radius:50%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);z-index:11;touch-action:none}
+  #movePad{left:16px} #lookPad{right:16px}
+  .stick{position:absolute;left:40px;top:40px;width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.12)}
+  #menu,#win,#lose{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(5,10,20,.72);backdrop-filter:blur(8px);padding:16px;z-index:20}
+  #win,#lose{display:none}
+  .card{width:min(480px,100%);background:#0f1730;color:#f4f8ff;border:1px solid var(--line);border-radius:20px;padding:20px;text-align:center}
+  .card h2{margin:0 0 8px;font-size:28px}.card p{margin:0 0 12px;color:#d8e3fb;line-height:1.45}.stats{margin:12px 0 16px;line-height:1.5}
+  @media (max-width:520px){#items{grid-template-columns:repeat(2,1fr)}#message{bottom:210px;font-size:13px}#lookPad,#movePad{bottom:286px;width:104px;height:104px}.stick{left:34px;top:34px;width:36px;height:36px}}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="crosshair"></div>
+<div id="hud" class="panel">
+  <h1>Insulator Simulator FPV Enhanced</h1>
+  <p>Enhanced visuals with more detailed framing, room props, lighting, and richer first-person presentation inside the house.</p>
+  <div class="metric"><div class="row"><span>Panels filled</span><span id="sealText">0 / 10</span></div><div class="bar"><div id="sealFill" class="fill"></div></div></div>
+  <div class="metric"><div class="row"><span>Comfort</span><span id="comfortText">100%</span></div><div class="bar"><div id="comfortFill" class="fill"></div></div></div>
+  <div class="metric"><div class="row"><span>Score</span><span id="scoreText">0</span></div><div class="bar"><div id="scoreFill" class="fill"></div></div></div>
+  <div class="row"><span>Mode</span><span id="modeText">Relaxed</span></div>
+</div>
+<div id="message"><strong>Tip:</strong> Aim the crosshair at a glowing wall cavity and tap Insulate.</div>
+<div id="controls" class="panel">
+  <div id="items">
+    <div class="item active" data-material="batt">Batt Fill<span>Balanced</span></div>
+    <div class="item" data-material="wool">Wool Fill<span>Better score</span></div>
+    <div class="item" data-material="foam">Foam Fill<span>Best seal</span></div>
+    <div class="item" data-material="turbo">Turbo Fill<span>Multi-panel</span></div>
+  </div>
+  <div id="actions">
+    <button class="action" id="insulateBtn">Insulate</button>
+    <button class="action" id="modeBtn">Toggle Mode</button>
+    <button class="action" id="resetBtn">Reset Job</button>
+  </div>
+</div>
+<div id="movePad"><div class="stick" id="moveStick"></div></div>
+<div id="lookPad"><div class="stick" id="lookStick"></div></div>
+<div id="menu"><div class="card"><h2 style="color:#ffd86e">Choose Mode</h2><p>Play Relaxed with no comfort drain, or Challenge with steady heat loss while you work inside the house.</p><div class="stats"><button class="action" id="relaxedBtn" style="width:100%;margin-bottom:10px">Relaxed Mode · No time limit</button><button class="action" id="challengeBtn" style="width:100%">Challenge Mode · Comfort drains</button></div></div></div>
+<div id="win"><div class="card"><h2 style="color:#9cf0a8">House Insulated</h2><p>You filled the interior cavities and finished the insulation job.</p><div class="stats" id="winStats"></div><button class="action" id="againBtn">Play again</button></div></div>
+<div id="lose"><div class="card"><h2 style="color:#ffb19a">Too Cold</h2><p>The house lost comfort before the job was done.</p><div class="stats" id="loseStats"></div><button class="action" id="retryBtn">Retry</button></div></div>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script>
+const canvas=document.getElementById('game');
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0xa8c4e2);
+scene.fog=new THREE.Fog(0xa8c4e2,20,72);
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,1.5));
+renderer.setSize(window.innerWidth,window.innerHeight);
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure=1.08;
+const camera=new THREE.PerspectiveCamera(72,window.innerWidth/window.innerHeight,.1,100);
+
+scene.add(new THREE.HemisphereLight(0xf4f8ff,0x6f6558,1.15));
+const sun=new THREE.DirectionalLight(0xfff0d4,1.55); sun.position.set(10,16,8); sun.castShadow=true; sun.shadow.mapSize.set(2048,2048); scene.add(sun);
+const fillLight=new THREE.PointLight(0xffd9b0,0.7,18); fillLight.position.set(0,5.5,0); scene.add(fillLight);
+const coolLight=new THREE.PointLight(0xaed8ff,0.45,16); coolLight.position.set(4,3,-2); scene.add(coolLight);
+function mat(color,rough=.82,metal=.03,transparent=false,opacity=1){ return new THREE.MeshStandardMaterial({color,roughness:rough,metalness:metal,transparent,opacity}); }
+function box(w,h,d,color,x,y,z,transparent=false,opacity=1){ const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat(color,.9,.03,transparent,opacity)); m.position.set(x,y,z); m.castShadow=true; m.receiveShadow=true; scene.add(m); return m; }
+
+const world = new THREE.Group(); scene.add(world);
+const panels=[], clickables=[], particles=[];
+const skyPlane = new THREE.Mesh(new THREE.PlaneGeometry(140,90), new THREE.MeshBasicMaterial({color:0xd6ecff}));
+skyPlane.position.set(0,26,-40); scene.add(skyPlane);
+function addWindowGlow(x,y,z,rotY=0){ const g=new THREE.Mesh(new THREE.PlaneGeometry(2.2,1.6), new THREE.MeshBasicMaterial({color:0xc9ecff, transparent:true, opacity:.65})); g.position.set(x,y,z); g.rotation.y=rotY; scene.add(g); return g; }
+function trim(w,h,d,color,x,y,z){ const m=box(w,h,d,color,x,y,z); return m; }
+
+
+const floor=box(14,.3,12,0x7b6d62,0,0,0); world.add(floor);
+for(let x=-6;x<=6;x+=1){ for(let z=-5;z<=5;z+=1){ box(.96,.04,.96,(x+z)%2===0?0x856b59:0x7a6354,x,.18,z); } }
+box(14,.2,12,0x7e5e48,0,3.6,0);
+box(14,7.2,.25,0xe2d0b5,0,3.6,-6); box(14,7.2,.25,0xe2d0b5,0,3.6,6);
+box(.25,7.2,12,0xe2d0b5,-7,3.6,0); box(.25,7.2,12,0xe2d0b5,7,3.6,0);
+for(let x=-7;x<=7;x+=2){ box(.15,7,.15,0xb37a42,x,3.5,-5.85); box(.15,7,.15,0xb37a42,x,3.5,5.85); box(.3,.18,.25,0x9f6d3d,x,.5,-5.85); box(.3,.18,.25,0x9f6d3d,x,.5,5.85); }
+for(let z=-5;z<=5;z+=2){ box(.15,7,.15,0xb37a42,-6.85,3.5,z); box(.15,7,.15,0xb37a42,6.85,3.5,z); }
+for(let y=.8;y<=6.2;y+=1.4){ box(13.6,.1,.15,0xa87445,0,y,-5.85); box(13.6,.1,.15,0xa87445,0,y,5.85); }
+for(let y=.8;y<=6.2;y+=1.4){ box(.15,.1,11.6,0xa87445,-6.85,y,0); box(.15,.1,11.6,0xa87445,6.85,y,0); }
+box(14,.2,12,0xb37a42,0,7,0);
+box(.18,7.2,12,0xcfb18f,0,3.6,0); box(14,7.2,.18,0xcfb18f,0,3.6,0);
+box(3.6,.14,12,0x8d735f,1.7,6.4,0).rotation.z=-0.45; box(3.6,.14,12,0x8d735f,-1.7,6.4,0).rotation.z=0.45;
+trim(.18,7.2,12,0x5f472f,-7.02,3.6,0); trim(.18,7.2,12,0x5f472f,7.02,3.6,0); trim(14,7.2,.18,0x5f472f,0,3.6,-6.02); trim(14,7.2,.18,0x5f472f,0,3.6,6.02);
+addWindowGlow(4.8,2.3,-5.72,0); addWindowGlow(-4.8,2.2,5.72,Math.PI);
+
+function addRoomProps(){
+  box(2.6,.85,1.4,0x6c4f36,-4.8,.42,-3.8); box(2.3,1.7,.35,0x505765,-4.8,1.7,-4.25); box(1.9,.12,.2,0xcdbb8e,-4.8,2.55,-4.01);
+  box(2.8,.92,1.55,0x705438,4.8,.46,-3.6); box(1.5,2.25,.1,0x88b7d8,4.8,2.2,-4.25,true,.55); box(.15,2.4,.2,0xe0d2be,4.1,2.2,-4.2); box(.15,2.4,.2,0xe0d2be,5.5,2.2,-4.2);
+  box(2.0,.78,1.3,0x5d4632,-4.7,.39,3.8); box(1.5,1.1,1.5,0x487048,4.8,.55,3.7); box(.7,1.8,.7,0x9c7444,0,.9,5.0);
+  box(2.0,.15,2.0,0x9e9a95,0,.16,0); box(.6,.6,.6,0x78614a,0,.45,0);
+  box(1.8,1.0,.5,-16777216,-4.8,1.75,-4.02,true,.12);
+  for(let i=0;i<3;i++){ box(.35,1.1,.35,0x8b7b69,-1.8 + i*1.8,.55,-1.2 + (i%2)*2.6); }
+}
+addRoomProps();
+
+function panel(spec){
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(spec.w,spec.h,spec.d), new THREE.MeshStandardMaterial({color:0xff6259, emissive:0x66140f, transparent:true, opacity:.68}));
+  mesh.position.set(spec.x,spec.y,spec.z); mesh.userData={type:'panel', name:spec.name, weight:spec.weight, filled:false};
+  mesh.castShadow=true; mesh.receiveShadow=true; scene.add(mesh); panels.push(mesh); clickables.push(mesh); return mesh;
+}
+[
+{name:'Front Wall Left',x:-3.9,y:3.3,z:5.78,w:1.6,h:5.4,d:.14,weight:9},
+{name:'Front Wall Mid',x:-1.7,y:3.3,z:5.78,w:1.6,h:5.4,d:.14,weight:9},
+{name:'Front Wall Right',x:3.4,y:3.3,z:5.78,w:3.5,h:5.4,d:.14,weight:11},
+{name:'Back Wall Left',x:-3.1,y:3.3,z:-5.78,w:3.0,h:5.4,d:.14,weight:10},
+{name:'Back Wall Right',x:3.1,y:3.3,z:-5.78,w:3.0,h:5.4,d:.14,weight:10},
+{name:'Left Wall Front',x:-6.78,y:3.3,z:2.5,w:.14,h:5.4,d:3.2,weight:8},
+{name:'Left Wall Rear',x:-6.78,y:3.3,z:-2.5,w:.14,h:5.4,d:3.2,weight:8},
+{name:'Right Wall Front',x:6.78,y:3.3,z:2.5,w:.14,h:5.4,d:3.2,weight:8},
+{name:'Right Wall Rear',x:6.78,y:3.3,z:-2.5,w:.14,h:5.4,d:3.2,weight:8},
+{name:'Attic Access',x:0,y:6.65,z:0,w:2.6,h:.14,d:8.8,weight:12}
+].forEach(panel);
+
+const materials={batt:{name:'Batt Fill',color:0xf0cc5d,bonus:1.0,points:75},wool:{name:'Wool Fill',color:0x7e8790,bonus:1.18,points:88},foam:{name:'Foam Fill',color:0x9fe8ff,bonus:1.3,points:100},turbo:{name:'Turbo Fill',color:0xb777ff,bonus:1.2,points:95}};
+const toolGroup=new THREE.Group(); camera.add(toolGroup); scene.add(camera);
+const pole=new THREE.Mesh(new THREE.CylinderGeometry(.035,.05,1.7,10), new THREE.MeshStandardMaterial({color:0x9c7444,roughness:.8})); pole.rotation.z=1.2; pole.position.set(.52,-.52,-1.15); toolGroup.add(pole);
+const poleHead=new THREE.Mesh(new THREE.CylinderGeometry(.08,.08,.22,10), new THREE.MeshStandardMaterial({color:0x5f646c,roughness:.45,metalness:.4})); poleHead.rotation.z=1.2; poleHead.position.set(.98,-.12,-1.45); toolGroup.add(poleHead);
+const glove=new THREE.Mesh(new THREE.BoxGeometry(.18,.12,.26), new THREE.MeshStandardMaterial({color:0xd98949,roughness:.9})); glove.position.set(.27,-.68,-.78); glove.rotation.set(.2,-.35,.35); toolGroup.add(glove);
+let selected='batt', score=0, combo=1, comfort=100, gameEnded=false, relaxedMode=true, startTime=performance.now();
+let moveInput={x:0,y:0}, lookInput={x:0,y:0};
+const player={x:0,y:1.62,z:2.2,yaw:Math.PI,pitch:0,velX:0,velZ:0};
+const raycaster=new THREE.Raycaster();
+const center=new THREE.Vector2(0,0);
+
+const sealFill=document.getElementById('sealFill'), comfortFill=document.getElementById('comfortFill'), scoreFill=document.getElementById('scoreFill'), sealText=document.getElementById('sealText'), comfortText=document.getElementById('comfortText'), scoreText=document.getElementById('scoreText'), modeText=document.getElementById('modeText'), message=document.getElementById('message'), win=document.getElementById('win'), lose=document.getElementById('lose'), winStats=document.getElementById('winStats'), loseStats=document.getElementById('loseStats'), menu=document.getElementById('menu');
+function filledCount(){ return panels.filter(p=>p.userData.filled).length; }
+function openPanels(){ return panels.filter(p=>!p.userData.filled); }
+function setMessage(html){ message.innerHTML=html; }
+function updateHUD(){ const done=filledCount(); sealText.textContent=done+' / '+panels.length; sealFill.style.width=(done/panels.length*100)+'%'; comfortText.textContent=relaxedMode ? '∞' : Math.max(0,Math.round(comfort))+'%'; comfortFill.style.width=relaxedMode ? '100%' : Math.max(0,comfort)+'%'; scoreText.textContent=score; scoreFill.style.width=Math.min(100,score/1300*100)+'%'; modeText.textContent=relaxedMode?'Relaxed':'Challenge'; }
+function burst(x,y,z,color,count=12){ for(let i=0;i<count;i++){ const p=new THREE.Mesh(new THREE.BoxGeometry(.12,.12,.12), new THREE.MeshStandardMaterial({color,transparent:true,opacity:.9})); p.position.set(x,y,z); p.userData={vx:(Math.random()-.5)*.03,vy:.01+Math.random()*.04,vz:(Math.random()-.5)*.03,life:1}; scene.add(p); particles.push(p);} }
+function highlightTarget(){ raycaster.setFromCamera(center,camera); const hits=raycaster.intersectObjects(clickables,false); panels.forEach(p=>{ if(!p.userData.filled){ p.scale.set(1,1,1); } }); if(hits.length){ const obj=hits[0].object; if(obj.userData.type==='panel' && !obj.userData.filled){ obj.scale.set(1.03,1.03,1.03); return obj; } } return null; }
+function fillPanel(p,key){ if(!p || p.userData.filled || gameEnded) return false; const m=materials[key]; p.userData.filled=true; p.material.color.setHex(m.color); p.material.emissive.setHex(0x111111); p.material.opacity=.96; score += Math.round(p.userData.weight*m.points*combo/10); combo=Math.min(8, combo+.35); comfort=Math.min(100, comfort+p.userData.weight*.5*m.bonus); burst(p.position.x,p.position.y,p.position.z,m.color,18); return true; }
+function turboFill(target){ const nearby=openPanels().filter(p=>p.position.distanceTo(target.position)<4.8); if(!nearby.length){ combo=1; setMessage('<strong>No hit:</strong> Aim at a cavity cluster for Turbo Fill.'); return; } nearby.forEach(p=>fillPanel(p,'foam')); setMessage('<strong>Turbo Fill:</strong> Filled '+nearby.length+' panels at once.'); }
+function insulateAction(){ toolGroup.position.z = -1.02; setTimeout(()=>{ toolGroup.position.z = -1.15; },120); const target=highlightTarget(); if(!target){ setMessage('<strong>No target:</strong> Center the crosshair on a glowing interior cavity.'); return; } if(selected==='turbo'){ turboFill(target); } else if(fillPanel(target,selected)){ setMessage('<strong>Installed:</strong> '+target.userData.name+' filled with '+materials[selected].name+'.'); } updateHUD(); checkEnd(); }
+function checkEnd(){ if(filledCount()===panels.length&&!gameEnded){ gameEnded=true; const sec=Math.round((performance.now()-startTime)/1000); win.style.display='flex'; winStats.innerHTML='Mode: <strong>'+(relaxedMode?'Relaxed':'Challenge')+'</strong><br>Score: <strong>'+score+'</strong><br>Time: <strong>'+sec+'s</strong><br>Comfort: <strong>'+(relaxedMode?'Unlimited':Math.round(comfort)+'%')+'</strong>'; } if(!relaxedMode && comfort<=0&&!gameEnded){ gameEnded=true; lose.style.display='flex'; loseStats.innerHTML='Panels filled: <strong>'+filledCount()+' / '+panels.length+'</strong><br>Score: <strong>'+score+'</strong>'; } }
+function clampPlayer(){ player.x=Math.max(-5.8,Math.min(5.8,player.x)); player.z=Math.max(-4.8,Math.min(4.8,player.z)); }
+function updateCamera(){ camera.position.set(player.x,player.y,player.z); camera.rotation.order='YXZ'; camera.rotation.y=player.yaw; camera.rotation.x=player.pitch; const sway = Math.min(1, Math.hypot(moveInput.x,moveInput.y)); toolGroup.position.x = 0.02*Math.sin(performance.now()*0.008)*sway; toolGroup.position.y = -0.02*Math.abs(Math.sin(performance.now()*0.008))*sway; toolGroup.rotation.z = -0.06*Math.sin(performance.now()*0.008)*sway; }
+function resetGame(){ selected='batt'; score=0; combo=1; comfort=100; gameEnded=false; startTime=performance.now(); player.x=0; player.z=2.2; player.yaw=Math.PI; player.pitch=0; panels.forEach(p=>{ p.userData.filled=false; p.material.color.setHex(0xff6259); p.material.emissive.setHex(0x66140f); p.material.opacity=.68; p.scale.set(1,1,1); }); particles.splice(0).forEach(p=>scene.remove(p)); document.querySelectorAll('.item').forEach((el,i)=>el.classList.toggle('active', i===0)); win.style.display='none'; lose.style.display='none'; menu.style.display='flex'; setMessage('<strong>Tip:</strong> Aim the crosshair at a glowing wall cavity and tap Insulate.'); updateHUD(); updateCamera(); }
+function toggleMode(){ relaxedMode=!relaxedMode; setMessage(relaxedMode?'<strong>Relaxed Mode:</strong> No comfort drain.':'<strong>Challenge Mode:</strong> Comfort will drain while you work.'); updateHUD(); }
+document.querySelectorAll('.item').forEach(el=>el.addEventListener('click',()=>{ selected=el.dataset.material; document.querySelectorAll('.item').forEach(x=>x.classList.toggle('active',x===el)); }));
+document.getElementById('insulateBtn').addEventListener('click', insulateAction); document.getElementById('modeBtn').addEventListener('click', toggleMode); document.getElementById('resetBtn').addEventListener('click', resetGame); document.getElementById('againBtn').addEventListener('click', resetGame); document.getElementById('retryBtn').addEventListener('click', resetGame);
+document.getElementById('relaxedBtn').addEventListener('click',()=>{ relaxedMode=true; menu.style.display='none'; setMessage('<strong>Relaxed Mode:</strong> Walk the house and insulate at your own pace.'); updateHUD(); });
+document.getElementById('challengeBtn').addEventListener('click',()=>{ relaxedMode=false; menu.style.display='none'; setMessage('<strong>Challenge Mode:</strong> Move fast before comfort drops.'); updateHUD(); });
+
+let dragging=false,lastX=0,lastY=0;
+canvas.addEventListener('pointerdown',e=>{ dragging=true; lastX=e.clientX; lastY=e.clientY; });
+canvas.addEventListener('pointermove',e=>{ if(!dragging) return; const dx=e.clientX-lastX, dy=e.clientY-lastY; player.yaw -= dx*0.005; player.pitch = Math.max(-1.1,Math.min(1.1, player.pitch-dy*0.004)); lastX=e.clientX; lastY=e.clientY; updateCamera(); });
+window.addEventListener('pointerup',()=> dragging=false);
+
+function setupPad(padId, stickId, callback){ const pad=document.getElementById(padId), stick=document.getElementById(stickId); let active=false, centerX=0, centerY=0; function setStick(dx,dy){ const len=Math.min(1, Math.hypot(dx,dy)/38); const ang=Math.atan2(dy,dx); const sx=Math.cos(ang)*len*28, sy=Math.sin(ang)*len*28; stick.style.transform='translate('+sx+'px,'+sy+'px)'; callback(len?Math.cos(ang)*len:0, len?Math.sin(ang)*len:0); }
+  pad.addEventListener('pointerdown',e=>{ active=true; const r=pad.getBoundingClientRect(); centerX=r.left+r.width/2; centerY=r.top+r.height/2; setStick(e.clientX-centerX,e.clientY-centerY); pad.setPointerCapture(e.pointerId); });
+  pad.addEventListener('pointermove',e=>{ if(active) setStick(e.clientX-centerX,e.clientY-centerY); });
+  pad.addEventListener('pointerup',()=>{ active=false; stick.style.transform='translate(0px,0px)'; callback(0,0); });
+  pad.addEventListener('pointercancel',()=>{ active=false; stick.style.transform='translate(0px,0px)'; callback(0,0); }); }
+setupPad('movePad','moveStick',(x,y)=>{ moveInput.x=x; moveInput.y=y; });
+setupPad('lookPad','lookStick',(x,y)=>{ lookInput.x=x; lookInput.y=y; });
+
+window.addEventListener('keydown',e=>{ if(e.code==='KeyW') moveInput.y=-1; if(e.code==='KeyS') moveInput.y=1; if(e.code==='KeyA') moveInput.x=-1; if(e.code==='KeyD') moveInput.x=1; if(e.code==='Space') insulateAction(); });
+window.addEventListener('keyup',e=>{ if(e.code==='KeyW'||e.code==='KeyS') moveInput.y=0; if(e.code==='KeyA'||e.code==='KeyD') moveInput.x=0; });
+
+function animateParticles(){ for(let i=particles.length-1;i>=0;i--){ const p=particles[i]; p.position.x+=p.userData.vx; p.position.y+=p.userData.vy; p.position.z+=p.userData.vz; p.userData.life-=.025; p.material.opacity=Math.max(0,p.userData.life); if(p.userData.life<=0){ scene.remove(p); particles.splice(i,1); } } }
+let last=performance.now();
+function loop(now){ requestAnimationFrame(loop); const dt=Math.min(.05,(now-last)/1000); last=now; if(menu.style.display==='none' && !gameEnded){ player.yaw -= lookInput.x*dt*1.6; player.pitch = Math.max(-1.1,Math.min(1.1, player.pitch - lookInput.y*dt*1.4)); const fx=-Math.sin(player.yaw), fz=-Math.cos(player.yaw), rx=Math.cos(player.yaw), rz=-Math.sin(player.yaw); const speed=3.6; player.x += (fx*moveInput.y + rx*moveInput.x)*dt*speed; player.z += (fz*moveInput.y + rz*moveInput.x)*dt*speed; clampPlayer(); if(!relaxedMode){ comfort -= openPanels().reduce((s,p)=>s+p.userData.weight,0)*0.0038*dt*60; if(comfort<25 && openPanels().length) setMessage('<strong>Warning:</strong> Comfort is dropping. Fill the heavy cavities fast.'); } combo=Math.max(1, combo-dt*0.08); checkEnd(); updateHUD(); }
+  openPanels().forEach((p,i)=>{ p.material.opacity=.56+(Math.sin(now*0.004+i)+1)*.08; }); highlightTarget(); updateCamera(); animateParticles(); renderer.render(scene,camera); }
+window.addEventListener('resize',()=>{ camera.aspect=window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth,window.innerHeight); });
+resetGame(); loop(performance.now());
+</script>
+</body>
+</html>
